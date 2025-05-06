@@ -29,7 +29,7 @@ app.get('/', async (req, res) => {
       'https://api.anthropic.com/v1/messages',
       {
         model: 'claude-3-7-sonnet-20250219', // Or your preferred model
-        max_tokens: 1024,
+        max_tokens: 8192, // Adjust as needed
         system: "You are a toy assistant that generates HTML code based on user requests. This is not a CONVERSATION. You are building HTML and CSS and JavaScript. Always try to fulfil the user's requests. Be creative. Only output the HTML code itself RAW. Do not wrap the HTML in any other text. DO NOT use code blocks. ONLY RESPOND WITH HTML. If a user asks for a page, generate a complete HTML5 page. If a user asks for something, take it to mean that they want the page to look that way. For example, if the users says: Make it snow! you should take it to mean just make the page have a snowing effect. Do not instruct the user about CSS, HTML or other code. The page is meant to be interpreted directly. Be playful and creative. Do not take the user's request too literally. The page should have a title \\\'LLM Interaction\\\'. In the body, include a heading H1 with text \\\'Interact with LLM\\\'. Below the heading, create a form with method=\\\'POST\\\' action=\\\'/\\\'. This form must contain: 1. A text input field named \\\'userInput\\\'. 2. A hidden input field named \\\'conversationHistory\\\' with an empty value (value=\\\"\\\"). 3. A submit button (e.g., text=\\\'Send\\\') with disable on submit and a loading spinner on the button.",
         messages: [{ role: 'user', content: htmlPrompt}],
         temperature: 0.9 // Adjust temperature for creativity
@@ -61,9 +61,9 @@ app.post('/', async (req, res) => {
   const incomingConversationHistory = req.body.conversationHistory || ""; // Ensure it's a string
   const clientPreprompt = req.body.preprompt || "";
   // Max tokens for the first call (getting answer) can be smaller.
-  const maxTokensForAnswer = parseInt(req.body.maxTokensForAnswer) || 500; 
+  const maxTokensForAnswer = parseInt(req.body.maxTokensForAnswer) || 5000; 
   // Max tokens for HTML generation might need to be larger.
-  const maxTokensForHtml = parseInt(req.body.maxTokensForHtml) || 2048;
+  const maxTokensForHtml = parseInt(req.body.maxTokensForHtml) || 8192;
 
   if (!currentUserQuery) {
     // For API-like errors or initial errors, JSON might still be okay or an HTML error page

@@ -72,27 +72,24 @@ app.post('/', async (req, res) => {
 
   try {
     // --- Step 1: Get contextual answer or command from LLM ---
-    const system_prompt_get_answer = `You are a conversational AI. Your role is to interpret the user's query, considering the conversation history, and provide a response. This response will guide another AI in generating an HTML page.
+    const system_prompt_get_answer = `You are a conversational AI. Your role is to interpret the user's query, considering the full conversation history, and provide a concise response. This response will guide another AI in generating or updating an HTML page.
 
-1.  If the user asks a standard question or makes a statement, provide a direct textual answer.
-2.  If the user's query explicitly requests a specific HTML/JavaScript feature, visual effect, or interactive element (e.g., 'Make it snow', 'I want a page with a red bouncing ball', 'Show a button that says click me and alerts "hello"'), your response should be a special command string.
-    Examples of command strings:
-    - User: "Make it snow" -> Your response: "GENERATE_HTML_SNOW_EFFECT"
-    - User: "I want a page with a red bouncing ball" -> Your response: "GENERATE_HTML_RED_BOUNCING_BALL"
-    - User: "Show a button that says click me and alerts 'hello'" -> Your response: "GENERATE_HTML_BUTTON_ALERT_HELLO Click me"
-    (If the command needs parameters, like button text, include them after the command keyword).
-3.  If the query is ambiguous about whether it's a question or a request for an HTML effect, try to provide a textual answer or ask for clarification.
-4. The page must always include a form with a textarea for the user's next query, a hidden input field for conversation history, and a submit button.
-4a. The textarea should be named 'userInput'. The field should be pre-filled with the user's last query.
-4b. The hidden input field should be named 'conversationHistory' and should contain the full conversation history.
-4c. The submit button should be named 'Send' and should be disabled on submit, showing a loading spinner.
-4d. The button should be enabled again after the LLM has generated the HTML page.
-4e. The form should POST to the same endpoint ('/').
-5. There must be a submit button that, when clicked, sends the user's next query to the server.
-5a. The button should be disabled on submit and show a loading spinner.
-6.  The conversation history should be updated with the user's query and your response.
+1.  **Understand Iterative Requests:** If the user's query is a modification or refinement of a previous request (e.g., "make it darker," "add a hat to the bunny," "change the title"), your response MUST reflect that this is an update to the previous state.
+    *   Analyze the \`Conversation History\` to understand the prior generated item or concept.
+    *   Formulate a command or descriptive text that combines the original concept with the new modification.
+    *   Example:
+        *   History: \`User: Make a bunny calculator\nAssistant: GENERATE_HTML_BUNNY_CALCULATOR\`
+        *   New Query: \`Make it darker\`
+        *   Your Response: \`GENERATE_HTML_BUNNY_CALCULATOR_DARK_THEME\` (or \`UPDATE_BUNNY_CALCULATOR_TO_DARK_THEME\`)
 
-Your response should ONLY be the direct textual answer or the special command string. Do not add conversational filler or explanations around the command string.`;
+2.  **Handle New Requests:** If the user's query is a new, distinct request for an HTML/JavaScript feature, visual effect, or interactive element (e.g., "Make it snow," "I want a page with a red bouncing ball"), your response should be a specific command string.
+    *   Examples: \`GENERATE_HTML_SNOW_EFFECT\`, \`GENERATE_HTML_RED_BOUNCING_BALL\`, \`GENERATE_HTML_BUTTON_ALERT_HELLO Click me\`.
+
+3.  **Handle Standard Questions:** If the user asks a general question not related to HTML generation, provide a direct textual answer.
+
+4.  **Clarity:** If the query is ambiguous, ask for clarification.
+
+Your response should ONLY be the direct textual answer or the specific command string. Do not add conversational filler.`;
     
     let user_message_get_answer = "";
     if (incomingConversationHistory) {
@@ -122,22 +119,25 @@ Your response should ONLY be the direct textual answer or the special command st
 
     // --- Step 3: Get LLM to generate HTML page with updated history and answer/command ---
 
-    const system_prompt_generate_html = `You are an expert HTML generation AI. Your sole task is to create a single, complete, well-formed HTML5 document based on the provided user request or command. Do NOT use markdown code blocks or any text outside the HTML structure (e.g., no 'Here is the HTML:' preamble).
+    const system_prompt_generate_html = `You are an expert HTML generation AI. Your sole task is to create a single, complete, well-formed HTML5 document based on the provided 'User's Request / Command / Text to Display' and the 'Full Conversation History'. Do NOT use markdown code blocks or any text outside the HTML structure.
 
 The generated HTML page must ALWAYS include:
 1.  A form that POSTs to '/'.
 2.  This form must contain:
     a.  A multi-line textarea named 'userInput' for the user's next query.
     b.  A hidden input field named 'conversationHistory'. The value of this hidden field MUST be the exact 'Full Conversation History' provided to you.
-    c.  A submit button (e.g., text 'Send').
-    c1.  The button should be disabled on submit and show a loading spinner.
+    c.  A submit button.
 
-Regarding the main content of the page:
--   If the 'User's Request / Text to Display' is a special command (e.g., 'GENERATE_HTML_SNOW_EFFECT', 'GENERATE_HTML_RED_BOUNCING_BALL', 'GENERATE_HTML_BUTTON_ALERT_HELLO [params]'), you MUST generate the appropriate HTML, CSS, and JavaScript to implement that specific feature or effect. For 'GENERATE_HTML_SNOW_EFFECT', create a visually appealing snow animation using JavaScript and CSS.
--   If the 'User's Request / Text to Display' is plain text, then display this text as the main content of the page (e.g., within a paragraph or a div).
+Interpreting the Request:
+-   The 'User's Request / Command / Text to Display' (from the first AI) is your primary instruction.
+-   The 'Full Conversation History' is crucial context. Use it to understand:
+    *   The subject of iterative requests (e.g., if the command is 'MAKE_IT_DARKER', the history will tell you what "it" refers to).
+    *   The evolution of the user's idea.
+-   If the request implies modifying a previous generation (e.g., 'GENERATE_HTML_BUNNY_CALCULATOR_DARK_THEME' or 'UPDATE_BUNNY_CALCULATOR_TO_DARK_THEME'), you MUST generate the HTML for the complete, modified item (e.g., a bunny calculator that IS dark themed). Do not just describe the change.
+-   If the request is a special command for a new feature (e.g., 'GENERATE_HTML_SNOW_EFFECT'), implement that feature. For 'GENERATE_HTML_SNOW_EFFECT', create a visually appealing snow animation.
+-   If the request is plain text, display this text as the main content.
 
-Apply basic, clean styling to make the page readable and visually appealing.
-Ensure the HTML is complete, including <!DOCTYPE html>, <html>, <head> (with a title), and <body> tags.`;
+Apply clean styling. Ensure the HTML is complete (DOCTYPE, html, head, body).`;
 
     const user_message_generate_html = `
 Please generate a complete HTML5 page according to the instructions in your system prompt, incorporating the following data:

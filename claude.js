@@ -21,7 +21,7 @@ app.get('/health', (req, res) => {
 
 // Root GET endpoint
 app.get('/', async (req, res) => {
-  const htmlPrompt = "Generate a complete HTML5 page. The page should have a title \\\'LLM Interaction\\\'. In the body, include a heading H1 with text \\\'Interact with LLM\\\'. Below the heading, create a form with method=\\\'POST\\\' action=\\\'/ask\\\'. This form must contain: 1. A text input field named \\\'userInput\\\'. 2. A hidden input field named \\\'conversationHistory\\\' with an empty value (value=\\\"\\\"). 3. A submit button (e.g., text=\\\'Send\\\'). Only output the raw HTML code. Do not use markdown code blocks.";
+  const htmlPrompt = "This is not a CONVERSATION. You are building HTML and CSS and JavaScript. Generate a complete HTML5 page which you output raw. Do not include anything but the page. Do not instruct the user about CSS, HTML or other code. The page is meant to be interpreted directly. The page should have a title \\\'LLM Interaction\\\'. In the body, include a heading H1 with text \\\'Interact with LLM\\\'. Below the heading, create a form with method=\\\'POST\\\' action=\\\'/\\\'. This form must contain: 1. A text input field named \\\'userInput\\\'. 2. A hidden input field named \\\'conversationHistory\\\' with an empty value (value=\\\"\\\"). 3. A submit button (e.g., text=\\\'Send\\\') with disable on submit and a loading spinner on the button. Only output the raw HTML code. Do not use markdown code blocks.";
 
   try {
     // Call the Claude API to generate HTML
@@ -30,8 +30,10 @@ app.get('/', async (req, res) => {
       {
         model: 'claude-3-7-sonnet-20250219', // Or your preferred model
         max_tokens: 1024,
-        system: "You are an AI assistant that generates HTML code based on user requests. Only output the HTML code itself RAW. Do not wrap the HTML in any other text. DO NOT use code blocks. ONLY RESPOND WITH HTML",
-        messages: [{ role: 'user', content: htmlPrompt }]
+        system: "You are a toy assistant that generates HTML code based on user requests. This is not a CONVERSATION. You are building HTML and CSS and JavaScript. Always try to fulfil the user's requests. Be creative. Only output the HTML code itself RAW. Do not wrap the HTML in any other text. DO NOT use code blocks. ONLY RESPOND WITH HTML. If a user asks for a page, generate a complete HTML5 page. If a user asks for something, take it to mean that they want the page to look that way. For example, if the users says: Make it snow! you should take it to mean just make the page have a snowing effect. Do not instruct the user about CSS, HTML or other code. The page is meant to be interpreted directly. Be playful and creative. Do not take the user's request too literally. The page should have a title \\\'LLM Interaction\\\'. In the body, include a heading H1 with text \\\'Interact with LLM\\\'. Below the heading, create a form with method=\\\'POST\\\' action=\\\'/\\\'. This form must contain: 1. A text input field named \\\'userInput\\\'. 2. A hidden input field named \\\'conversationHistory\\\' with an empty value (value=\\\"\\\"). 3. A submit button (e.g., text=\\\'Send\\\') with disable on submit and a loading spinner on the button.",
+        messages: [{ role: 'user', content: htmlPrompt}],
+        temperature: 0.9 // Adjust temperature for creativity
+
       },
       {
         headers: {
@@ -54,7 +56,7 @@ app.get('/', async (req, res) => {
 });
 
 // Main LLM endpoint
-app.post('/ask', async (req, res) => {
+app.post('/', async (req, res) => {
   const currentUserQuery = req.body.userInput;
   const incomingConversationHistory = req.body.conversationHistory || ""; // Ensure it's a string
   const clientPreprompt = req.body.preprompt || "";
@@ -69,8 +71,28 @@ app.post('/ask', async (req, res) => {
   }
 
   try {
-    // --- Step 1: Get contextual answer from LLM ---
-    const system_prompt_get_answer = "You are a conversational AI. Given the conversation history and a new user query, provide a concise and relevant textual answer to the new query. Focus only on providing the direct answer text, not any other conversational filler, HTML, or markdown.";
+    // --- Step 1: Get contextual answer or command from LLM ---
+    const system_prompt_get_answer = `You are a conversational AI. Your role is to interpret the user's query, considering the conversation history, and provide a response. This response will guide another AI in generating an HTML page.
+
+1.  If the user asks a standard question or makes a statement, provide a direct textual answer.
+2.  If the user's query explicitly requests a specific HTML/JavaScript feature, visual effect, or interactive element (e.g., 'Make it snow', 'I want a page with a red bouncing ball', 'Show a button that says click me and alerts "hello"'), your response should be a special command string.
+    Examples of command strings:
+    - User: "Make it snow" -> Your response: "GENERATE_HTML_SNOW_EFFECT"
+    - User: "I want a page with a red bouncing ball" -> Your response: "GENERATE_HTML_RED_BOUNCING_BALL"
+    - User: "Show a button that says click me and alerts 'hello'" -> Your response: "GENERATE_HTML_BUTTON_ALERT_HELLO Click me"
+    (If the command needs parameters, like button text, include them after the command keyword).
+3.  If the query is ambiguous about whether it's a question or a request for an HTML effect, try to provide a textual answer or ask for clarification.
+4. The page must always include a form with a textarea for the user's next query, a hidden input field for conversation history, and a submit button.
+4a. The textarea should be named 'userInput'. The field should be pre-filled with the user's last query.
+4b. The hidden input field should be named 'conversationHistory' and should contain the full conversation history.
+4c. The submit button should be named 'Send' and should be disabled on submit, showing a loading spinner.
+4d. The button should be enabled again after the LLM has generated the HTML page.
+4e. The form should POST to the same endpoint ('/').
+5. There must be a submit button that, when clicked, sends the user's next query to the server.
+5a. The button should be disabled on submit and show a loading spinner.
+6.  The conversation history should be updated with the user's query and your response.
+
+Your response should ONLY be the direct textual answer or the special command string. Do not add conversational filler or explanations around the command string.`;
     
     let user_message_get_answer = "";
     if (incomingConversationHistory) {
@@ -98,29 +120,33 @@ app.post('/ask', async (req, res) => {
     // --- Step 2: Update conversation history (server-side) ---
     const updatedConversationHistory = `${incomingConversationHistory}User: ${currentUserQuery}\nAssistant: ${currentLlmAnswerText}\n---\n`;
 
-    // --- Step 3: Get LLM to generate HTML page with updated history and answer ---
+    // --- Step 3: Get LLM to generate HTML page with updated history and answer/command ---
 
-    const system_prompt_generate_html = "You are an expert HTML generation AI. Your sole task is to create a single, complete, well-formed HTML5 document. Do NOT use markdown code blocks or any text outside the HTML structure (e.g. no 'Here is the HTML:' preamble). The HTML page must display the latest AI answer and include a form for the user to continue the conversation. This form must POST to '/ask' and contain a textarea named 'userInput' for the next query, and a hidden input field named 'conversationHistory' which must contain the full, updated conversation history provided.";
+    const system_prompt_generate_html = `You are an expert HTML generation AI. Your sole task is to create a single, complete, well-formed HTML5 document based on the provided user request or command. Do NOT use markdown code blocks or any text outside the HTML structure (e.g., no 'Here is the HTML:' preamble).
+
+The generated HTML page must ALWAYS include:
+1.  A form that POSTs to '/'.
+2.  This form must contain:
+    a.  A multi-line textarea named 'userInput' for the user's next query.
+    b.  A hidden input field named 'conversationHistory'. The value of this hidden field MUST be the exact 'Full Conversation History' provided to you.
+    c.  A submit button (e.g., text 'Send').
+    c1.  The button should be disabled on submit and show a loading spinner.
+
+Regarding the main content of the page:
+-   If the 'User's Request / Text to Display' is a special command (e.g., 'GENERATE_HTML_SNOW_EFFECT', 'GENERATE_HTML_RED_BOUNCING_BALL', 'GENERATE_HTML_BUTTON_ALERT_HELLO [params]'), you MUST generate the appropriate HTML, CSS, and JavaScript to implement that specific feature or effect. For 'GENERATE_HTML_SNOW_EFFECT', create a visually appealing snow animation using JavaScript and CSS.
+-   If the 'User's Request / Text to Display' is plain text, then display this text as the main content of the page (e.g., within a paragraph or a div).
+
+Apply basic, clean styling to make the page readable and visually appealing.
+Ensure the HTML is complete, including <!DOCTYPE html>, <html>, <head> (with a title), and <body> tags.`;
 
     const user_message_generate_html = `
-Please generate a complete HTML5 page incorporating the following data:
+Please generate a complete HTML5 page according to the instructions in your system prompt, incorporating the following data:
 
-1.  **Latest AI Answer to display to the user:**
+1.  **User's Request / Text to Display:**
     ${currentLlmAnswerText}
 
-2.  **Full Conversation History (to be placed in a hidden input field named 'conversationHistory'):**
+2.  **Full Conversation History (to be placed in the hidden input field named 'conversationHistory'):**
     ${updatedConversationHistory}
-
-**Requirements for the HTML page:**
--   It must be a single, complete HTML5 document.
--   Include a suitable title (e.g., 'LLM Conversation').
--   Display the 'Latest AI Answer' clearly to the user.
--   Provide a form that POSTs to the '/ask' endpoint.
--   This form must contain:
-    a.  A multi-line textarea named 'userInput' for the user's next query.
-    b.  A hidden input field named 'conversationHistory'. The value of this hidden field MUST be the exact 'Full Conversation History' provided above.
-    c.  A submit button (e.g., text 'Send').
-- Apply some basic, clean styling to make the page readable (e.g., for body, headings, answer display, form elements).
 `;
 
     const htmlResponse = await axios.post(
@@ -142,7 +168,7 @@ Please generate a complete HTML5 page incorporating the following data:
     return res.send(generatedHtml);
 
   } catch (error) {
-    console.error('Error in /ask endpoint:', error.response?.data || error.message);
+    console.error('Error in / endpoint:', error.response?.data || error.message);
     const errorDetails = error.response?.data?.error?.message || error.message || 'An unknown error occurred.';
     const errorHtmlResponse = `
       <!DOCTYPE html>
@@ -167,43 +193,6 @@ Please generate a complete HTML5 page incorporating the following data:
     `;
     res.setHeader('Content-Type', 'text/html');
     return res.status(500).send(errorHtmlResponse);
-  }
-});
-
-// Custom endpoint for specific functionality
-app.post('/summarize', async (req, res) => {
-  const { text } = req.body;
-  
-  if (!text) {
-    return res.status(400).json({ error: 'Text is required' });
-  }
-
-  const prompt = `Please summarize the following text concisely: \n\n${text}`;
-  
-  try {
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-3-7-sonnet-20250219',
-        max_tokens: 500,
-        system: "You are a helpful assistant that creates concise summaries.",
-        messages: [{ role: 'user', content: prompt }]
-      },
-      {
-        headers: {
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    return res.json({
-      summary: response.data.content[0].text
-    });
-  } catch (error) {
-    console.error('Error calling Claude API:', error.response?.data || error.message);
-    return res.status(500).json({ error: 'Failed to summarize text' });
   }
 });
 
